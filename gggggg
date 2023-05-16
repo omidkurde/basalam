@@ -1,0 +1,556 @@
+
+<?php
+
+/**
+ * The plugin bootstrap file
+ *
+ * This file is read by WordPress to generate the plugin information in the plugin
+ * admin area. This file also includes all of the dependencies used by the plugin,
+ * registers the activation and deactivation functions, and defines a function
+ * that starts the plugin.
+ *
+ * @link              https://seller1.co
+ * @since             1.0.0
+ * @package           Basalamwoo
+ *
+ * @wordpress-plugin
+ * Plugin Name:       basalamwoo
+ * Plugin URI:        https://seller1.co
+ * Description:       پلاگین درج محصولات  ووکامرس در باسلام 
+و ارسال و پردازش سفارشات باسلام در ووکامرس
+ * Version:           1.0.0
+ * Author:            omid kamangar
+ * Author URI:        https://seller1.co
+ * License:           GPL-2.0+
+ * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
+ * Text Domain:       basalamwoo
+ * Domain Path:       /languages
+ */
+
+// If this file is called directly, abort.
+if ( ! defined( 'WPINC' ) ) {
+	die;
+}
+
+/**
+ * Currently plugin version.
+ * Start at version 1.0.0 and use SemVer - https://semver.org
+ * Rename this for your plugin and update it as you release new versions.
+ */
+define( 'BASALAMWOO_VERSION', '1.0.0' );
+
+/**
+ * The code that runs during plugin activation.
+ * This action is documented in includes/class-basalamwoo-activator.php
+ */
+function activate_basalamwoo() {
+	require_once plugin_dir_path( __FILE__ ) . 'includes/class-basalamwoo-activator.php';
+	Basalamwoo_Activator::activate();
+}
+
+/**
+ * The code that runs during plugin deactivation.
+ * This action is documented in includes/class-basalamwoo-deactivator.php
+ */
+function deactivate_basalamwoo() {
+	require_once plugin_dir_path( __FILE__ ) . 'includes/class-basalamwoo-deactivator.php';
+	Basalamwoo_Deactivator::deactivate();
+}
+
+register_activation_hook( __FILE__, 'activate_basalamwoo' );
+register_deactivation_hook( __FILE__, 'deactivate_basalamwoo' );
+
+/**
+ * The core plugin class that is used to define internationalization,
+ * admin-specific hooks, and public-facing site hooks.
+ */
+require plugin_dir_path( __FILE__ ) . 'includes/class-basalamwoo.php';
+
+/**
+ * Begins execution of the plugin.
+ *
+ * Since everything within the plugin is registered via hooks,
+ * then kicking off the plugin from this point in the file does
+ * not affect the page life cycle.
+ *
+ * @since    1.0.0
+ */
+function run_basalamwoo() {
+
+	$plugin = new Basalamwoo();
+	$plugin->run();
+
+}
+run_basalamwoo();
+
+
+// کدنویسی a1
+// در این قسمت، فایل اصلی افزونه شما را شروع می‌کنیم
+
+defined( 'ABSPATH' ) || exit;
+
+// تابع ارسال محصول به باسلام
+
+function my_wc_plugin_send_product_to_basalam($product_id, $discount_rate) {
+
+    // اطلاعات محصول از ووکامرس را دریافت می‌کنیم
+
+    $product = wc_get_product($product_id);
+
+    // بررسی موجودی محصول
+
+    if (!$product->is_in_stock()) {
+
+        return false;
+
+    }
+
+    // تنظیمات وبسرویس باسلام
+
+    $url = 'https://plus.basalam.com/api/v1.0/products';
+
+    $username = 'basalam_username'; // نام کاربری غرفه باسلام
+
+    $password = 'basalam_password'; // رمز عبور غرفه باسلام
+
+    // تنظیمات درخواست
+
+    $args = array(
+
+        'headers' => array(
+
+            'Content-Type' => 'application/json'
+
+        ),
+
+        'body' => json_encode(array(
+
+            'name' => $product->get_name(),
+
+            'description' => $product->get_description(),
+
+            'price' => $product->get_regular_price() * (100 - $discount_rate) / 100, // قیمت با توجه به تخفیف
+
+            'stock' => $product->get_stock_quantity(),
+
+            'category' => $product->get_categories()[0]->get_name() // دسته بندی
+
+        )),
+
+        'auth' => array(
+
+            $username,
+
+            $password
+
+        )
+
+    );
+
+    // ارسال درخواست
+
+    $response = wp_remote_post($url, $args);
+
+    // بررسی و برگرداندن نتیجه
+
+    if (is_wp_error($response)) {
+
+        return false;
+
+    }
+
+    $http_code = wp_remote_retrieve_response_code($response);
+
+    if ($http_code === 201) {
+
+        return true;
+
+    } else {
+
+        return false;
+
+    }
+
+}
+
+// تابع چک کردن موجودی و قیمت محصول در ووکامرس
+
+function my_wc_plugin_check_product_availability($product_id) {
+
+    $product = wc_get_product($product_id);
+
+    if (!$product->is_in_stock()) {
+
+        return false;
+
+    }
+
+    return true;
+
+}
+
+// افزودن دکمه درج محصول در صفحه محصولات ووکامرس
+
+add_action('woocommerce_product_options_general_product_data', 'my_wc_plugin_add_basalam_button');
+
+function my_wc_plugin_add_basalam_button() {
+
+    global $post;
+
+    // بررسی اعتبارسنجی محصول
+
+    if (!my_wc_plugin_check_product_availability($post->ID)) {
+
+        return;
+
+    }
+
+    // افزودن دکمه درج محصول در باسلام
+
+    echo '<div class="options_group">';
+
+    echo '<p><a href="'.admin_url('admin.php?page=my_wc_plugin_send_to_basalam&product_id='.$post->ID).'">'.__('درج محصول در باسلام').'</a></p>';
+
+    echo '</div>';
+
+}
+
+// صفحه درج محصول در باسلام
+
+add_action('admin_menu', 'my_wc_plugin_create_basalam_page');
+
+function my_wc_plugin_create_basalam_page() {
+
+    add_menu_page(
+
+        'درج محصول در باسلام',
+
+        'درج در باسلام',
+
+        'manage_options',
+
+        'my_wc_plugin_send_to_basalam',
+
+        'my_wc_plugin_basalam_page_callback',
+
+        'dashicons-share-alt',
+
+        80
+
+    );
+
+}
+
+// تابع نمایش صفحه درج محصول در باسلام
+
+function my_wc_plugin_basalam_page_callback() {
+
+    $product_id = $_GET['product_id'];
+
+    // بررسی اعتبارسنجی محصول
+
+    if (!my_wc_plugin_check_product_availability($product_id)) {
+
+        echo '<p style="color:red;">این محصول در دسترس نیست.</p>';
+
+        return;
+
+    }
+
+    // فرم درج محصول در باسلام
+
+    echo '<form method="POST" action="'.admin_url('admin-post.php').'">';
+
+    echo '<input type="hidden" name="action" value="my_wc_plugin_send_product_to_basalam">';
+
+    echo '<input type="hidden" name="product_id" value="'.$product_id.'">';
+
+    echo '<label>درصد تخفیف:</label><br>';
+
+    echo '<input type="number" name="discount_rate" value="0"><br><br>';
+
+    echo '<input type="submit" value="درج در باسلام">';
+
+    echo '</form>';
+
+}
+
+// دریافت اطلاعات فرم و ارسال محصول به باسلام
+
+add_action('admin_post_my_wc_plugin_send_product_to_basalam', 'my_wc_plugin_send_product_to_basalam_callback');
+
+function my_wc_plugin_send_product_to_basalam_callback() {
+
+    $product_id = $_POST['product_id'];
+
+    $discount_rate = $_POST['discount_rate'];
+
+    if (my_wc_plugin_send_product_to_basalam($product_id, $discount_rate)) {
+
+        wp_redirect(admin_url('post.php?post='.$product_id.'&action=edit&message=10'));
+
+    } else {
+
+        wp_redirect(admin_url('post.php?post='.$product_id.'&action=edit&message=20'));
+
+    }
+
+    exit;
+
+}
+// پایان کدنویسی a1
+// کدنویسی a2
+// تابع دریافت سفارشات از باسلام و ثبت آن‌ها در ووکامرس
+
+function my_wc_plugin_sync_orders_from_basalam() {
+
+    // تنظیمات وبسرویس باسلام
+
+    $url = 'https://plus.basalam.com/api/v1.0/orders';
+
+    $username = 'basalam_username'; // نام کاربری غرفه باسلام
+
+    $password = 'basalam_password'; // رمز عبور غرفه باسلام
+
+    // تنظیمات درخواست
+
+    $args = array(
+
+        'headers' => array(
+
+            'Content-Type' => 'application/json'
+
+        ),
+
+        'auth' => array(
+
+            $username,
+
+            $password
+
+        )
+
+    );
+
+    // دریافت لیست سفارشات از باسلام
+
+    $client = new \GuzzleHttp\Client();
+
+    $response = $client->get($url, $args);
+
+    // بررسی و برگرداندن نتیجه
+
+    $orders = array();
+
+    if ($response->getStatusCode() == 200) {
+
+        $response_data = json_decode($response->getBody(), true);
+
+        
+
+        foreach ($response_data as $order_data) {
+
+            // چک کردن این که آیا سفارش قبلا در ووکامرس ثبت شده است یا خیر
+
+            $order_id = my_wc_plugin_get_order_id_by_basalam_order_number($order_data['order_number']);
+
+            if ($order_id == null) {
+
+                // ثبت سفارش در ووکامرس
+
+                $order_id = my_wc_plugin_create_order_in_woocommerce($order_data);
+
+            }
+
+            // ذخیره کدرهگیری پستی در باسلام
+
+            my_wc_plugin_update_basalam_order_tracking_code($order_data['order_number'], $order_data['tracking_code']);
+
+            // ذخیره شناسه سفارش در آرایه
+
+            array_push($orders, $order_id);
+
+        }
+
+    }
+
+    // برگرداندن لیست شناسه‌های سفارشات
+
+    return $orders;
+
+}
+
+// تابع پردازش کد رهگیری سفارش در باسلام
+
+function my_wc_plugin_process_basalam_order_tracking_codes() {
+
+    // تنظیمات وبسرویس باسلام
+
+    $url = 'https://plus.basalam.com/api/v1.0/orders/trackings';
+
+    $username = 'basalam_username'; // نام کاربری غرفه باسلام
+
+    $password = 'basalam_password'; // رمز عبور غرفه باسلام
+
+    // تنظیمات درخواست
+
+    $args = array(
+
+        'headers' => array(
+
+            'Content-Type' => 'application/json'
+
+        ),
+
+        'auth' => array(
+
+            $username,
+
+            $password
+
+        )
+
+    );
+
+    // دریافت لیست کد‌های رهگیری از باسلام
+
+    $client = new \GuzzleHttp\Client();
+
+    $response = $client->get($url, $args);
+
+    // بررسی و برگرداندن نتیجه
+
+    if ($response->getStatusCode() == 200) {
+
+        $response_data = json_decode($response->getBody(), true);
+
+        foreach ($response_data as $tracking_data) {
+
+            // بروزرسانی کدرهگیری در سفارش در ووکامرس
+
+            my_wc_plugin_update_order_tracking_code_by_basalam_order_number($tracking_data['order_number'], $tracking_data['tracking_code']);
+
+        }
+
+    }
+
+}
+
+// تابع ثبت سفارش در ووکامرس
+
+function my_wc_plugin_create_order_in_woocommerce($order_data) {
+
+    // تنظیمات وبسرویس ووکامرس
+
+    $url = 'https://example.com/wp-json/wc/v3/orders';
+
+    $consumer_key = 'wc_consumer_key'; // کلید مصرف‌کننده API ووکامرس
+
+    $consumer_secret = 'wc_consumer_secret'; // رمز مصرف‌کننده API ووکامرس
+
+    // تنظیمات درخواست
+
+    $args = array(
+
+        'headers' => array(
+
+            'Content-Type' => 'application/json',
+
+            'Authorization' => 'Basic ' . base64_encode($consumer_key . ':' . $consumer_secret)
+
+        ),
+
+        'body' => json_encode($order_data)
+
+    );
+
+    // ارسال درخواست به ووکامرس
+
+    $client = new \GuzzleHttp\Client();
+
+    $response = $client->post($url, $args);
+
+    // برگرداندن شناسه سفارش ایجاد شده در ووکامرس
+
+    if ($response->getStatusCode() == 201) {
+
+        $response_data = json_decode($response->getBody(), true);
+
+        return $response_data['id'];
+
+    } else {
+
+        return null;
+
+    }
+
+}
+
+// تابع بروزرسانی کدرهگیری سفارش در باسلام
+
+function my_wc_plugin_update_basalam_order_tracking_code($order_number, $tracking_code) {
+
+    // تنظیمات وبسرویس باسلام
+
+    $url = 'https://plus.basalam.com/api/v1.0/orders/' . $order_number . '/tracking';
+
+    $username = 'basalam_username'; // نام کاربری غرفه باسلام
+
+    $password = 'basalam_password'; // رمز عبور غرفه باسلام
+
+    // تنظیمات درخواست
+
+    $args = array(
+
+        'headers' => array(
+
+            'Content-Type' => 'application/json'
+
+        ),
+
+        'auth' => array(
+
+            $username,
+
+            $password
+
+        ),
+
+        'body' => json_encode(array(
+
+            'tracking_code' => $tracking_code
+
+        ))
+
+    );
+
+    // ارسال درخواست به باسلام
+
+    $client = new \GuzzleHttp\Client();
+
+    $response = $client->put($url, $args);
+
+    // برگرداندن نتیجه
+
+    return $response->getStatusCode() == 200;
+
+}
+
+// تابع بروزرسانی کدرهگیری سفارش در ووکامرس با استفاده از شماره سفارش در باسلام
+
+function my_wc_plugin_update_order_tracking_code_by_basalam_order_number($order_number, $tracking_code) {
+
+    // یافتن شناسه سفارش در ووکامرس با استفاده از شماره سفارش در باسلام
+
+    $order_id = my_wc_plugin_get_order_id_by_basalam_order_number($order_number);
+
+    // بروزرسانی کدرهگیری در سفارش در ووکامرس
+
+    if ($order_id != null) {
+
+        $order = wc_get_order($order_id);
+
+        $order->update_meta_data('basalam_tracking_code', $tracking_code);
+
+        $order->save();
+//پایان کدنویسی a2
